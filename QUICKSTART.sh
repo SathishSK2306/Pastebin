@@ -1,0 +1,57 @@
+#!/bin/bash
+# Quick start script for Pastebin Lite
+
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║        PASTEBIN LITE - QUICK START GUIDE               ║"
+echo "╚════════════════════════════════════════════════════════╝"
+echo ""
+
+echo "📋 INSTALLATION"
+echo "==============="
+echo "1. npm install"
+echo ""
+
+echo "🚀 DEVELOPMENT"
+echo "=============="
+echo "2. npm run dev"
+echo "   → Open http://localhost:3000"
+echo ""
+
+echo "✅ TESTING"
+echo "=========="
+echo "3. Test endpoints:"
+echo "   curl http://localhost:3000/api/healthz"
+echo ""
+echo "4. Type check:"
+echo "   npm run type-check"
+echo ""
+
+echo "📦 PRODUCTION"
+echo "============="
+echo "5. npm run build"
+echo "   npm start"
+echo ""
+
+echo "🌐 DEPLOYMENT"
+echo "============="
+echo "6. Push to GitHub"
+echo "7. Deploy to Vercel"
+echo "   → Import repository"
+echo "   → Select Next.js"
+echo "   → Auto-deploy"
+echo ""
+
+echo "📚 DOCUMENTATION"
+echo "================"
+echo "• README.md - Full documentation"
+echo "• DEVELOPMENT.md - Dev commands"
+echo "• SUBMISSION.md - Checklist"
+echo "• INDEX.md - Project overview"
+echo ""
+
+echo "✨ READY FOR SUBMISSION ✨"
+echo ""
+echo "Submit:"
+echo "1. Deployed URL (from Vercel)"
+echo "2. GitHub repository URL"
+echo "3. Design notes (see SUBMISSION.md)"

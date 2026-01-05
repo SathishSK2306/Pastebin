@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pastebin Lite
 
-## Getting Started
+A modern, minimal pastebin application built with **Next.js 16** and deployed on **Vercel**. Users can create, share, and view text pastes with optional time-based expiry (TTL) and view-count limits.
+
+## 🎯 Project Overview
+
+**Pastebin Lite** is a take-home assignment submission that demonstrates professional full-stack development practices.
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm/yarn/pnpm
+- Vercel account (for deployment)
+
+### Local Development
 
 First, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The application will start at `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## 📋 API Documentation
 
-To learn more about Next.js, take a look at the following resources:
+### Health Check
+**Endpoint**: `GET /api/healthz`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Response: `{ "ok": true }`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Create a Paste
+**Endpoint**: `POST /api/pastes`
 
-## Deploy on Vercel
+Request:
+```json
+{
+  "content": "Your text here",
+  "ttl_seconds": 3600,
+  "max_views": 5
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Response: `{ "id": "abc123", "url": "https://your-app.vercel.app/p/abc123" }`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Fetch Paste (API)
+**Endpoint**: `GET /api/pastes/:id`
+
+Response:
+```json
+{
+  "content": "Your text here",
+  "remaining_views": 4,
+  "expires_at": "2026-01-05T10:30:00.000Z"
+}
+```
+
+### View Paste (HTML)
+**Endpoint**: `GET /p/:id`
+
+Returns HTML page with paste content.
+
+## 🔐 Security Features
+
+✅ XSS Protection - All content HTML-escaped  
+✅ No Hardcoded URLs - Uses environment variables  
+✅ No Secrets in Repository - KV managed by Vercel  
+✅ Serverless-Safe - No global mutable state  
+✅ Input Validation - All inputs server-validated
+
+## 📊 Persistence Layer: Vercel KV
+
+**Why Vercel KV?**
+- Persistent storage across serverless invocations
+- Zero configuration on Vercel
+- Automatic key expiry (TTL support)
+- Sub-millisecond latency
+- Included with Vercel deployments
+
+Data is stored as JSON with automatic expiry:
+```typescript
+Key: paste:<id>
+Value: { id, content, ttl_seconds?, max_views?, created_at, views_count, expires_at? }
+```
+
+## 🧪 Testing
+
+```bash
+# Health check
+curl http://localhost:3000/api/healthz
+
+# Create paste
+curl -X POST http://localhost:3000/api/pastes \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Hello World","ttl_seconds":60}'
+
+# Test mode with deterministic time
+TEST_MODE=1 npm run dev
+curl http://localhost:3000/api/pastes/<id> -H "x-test-now-ms: 1704470400000"
+```
+
+## 📦 Deployment to Vercel
+
+1. Push to GitHub
+2. Visit vercel.com and import repository
+3. Vercel auto-configures KV database
+4. Deploy with automatic builds on push
+
+## ✅ Compliance
+
+- [x] TypeScript with full type safety
+- [x] All required API routes implemented
+- [x] TTL and view count constraints
+- [x] Test mode support with x-test-now-ms header
+- [x] XSS protection with HTML escaping
+- [x] No global mutable state
+- [x] No secrets in repository
+- [x] Professional code structure
+- [x] Comprehensive documentation
+
+## 🎓 Design Decisions
+
+1. **Vercel KV** - Zero-config, automatic TTL support, perfect for serverless
+2. **Nanoid IDs** - URL-safe, collision-resistant, simple
+3. **HTML Response** - Faster than JSON + client rendering
+4. **View Count on API** - Matches standard pastebin behavior
+5. **Test Mode Header** - Deterministic testing without code changes
+
+---
+
+Built with ❤️ using Next.js 16 + Vercel KV | Ready for Vercel deployment
