@@ -1,25 +1,9 @@
-/**
- * Database utility for Vercel KV persistence layer
- * Handles all paste storage and retrieval operations
- */
+import Redis from 'ioredis';
 
-import { kv } from '@vercel/kv';
+// Initialize Redis with the URL from your Vercel Environment Variables
+const redis = new Redis(process.env.REDIS_URL || '');
 
-// Local in-memory fallback for development when Vercel KV is not configured
-// Persist the fallback store on globalThis so it survives module reloads
-// (helps during Fast Refresh / dev server restarts).
-const globalAny: any = globalThis as any;
-const localStore: Map<string, string> =
-  globalAny.__pastebin_local_store ?? (globalAny.__pastebin_local_store = new Map());
-
-const isProductionKVUnavailable = async () => {
-  try {
-    await kv.get('__kv_probe__');
-    return false;
-  } catch (e) {
-    return true;
-  }
-};
+// --- INTERFACES (These are the ones you were missing) ---
 
 export interface Paste {
   id: string;
@@ -37,21 +21,21 @@ export interface PasteData {
   max_views?: number;
 }
 
+// EXPORTED: Used in POST /api/pastes
 export interface PasteResponse {
   id: string;
   url: string;
 }
 
+// EXPORTED: Used in GET /api/pastes/:id
 export interface GetPasteResponse {
   content: string;
   remaining_views: number | null;
   expires_at: string | null;
 }
 
-/**
- * Get current time in milliseconds
- * Respects TEST_MODE with x-test-now-ms header
- */
+// --- HELPER FUNCTIONS ---
+
 export function getCurrentTime(testNowMs?: number): number {
   if (process.env.TEST_MODE === '1' && testNowMs) {
     return testNowMs;
@@ -59,9 +43,6 @@ export function getCurrentTime(testNowMs?: number): number {
   return Date.now();
 }
 
-/**
- * Store a new paste in the database
- */
 export async function createPaste(
   id: string,
   data: PasteData
@@ -81,50 +62,22 @@ export async function createPaste(
     expires_at,
   };
 
-  // Store with TTL if present, otherwise store indefinitely
-  try {
-    if (data.ttl_seconds) {
-      await kv.setex(`paste:${id}`, data.ttl_seconds, JSON.stringify(paste));
-    } else {
-      await kv.set(`paste:${id}`, JSON.stringify(paste));
-    }
-  } catch (err) {
-    // If KV is not available (local dev), fallback to in-memory store
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('[db] Vercel KV unavailable — using in-memory fallback for paste', id);
-      if (data.ttl_seconds) {
-        // Store JSON along with expires_at; no auto-expiry here
-        localStore.set(`paste:${id}`, JSON.stringify(paste));
-      } else {
-        localStore.set(`paste:${id}`, JSON.stringify(paste));
-      }
-    } else {
-      throw err;
-    }
+  const pasteString = JSON.stringify(paste);
+
+  if (data.ttl_seconds) {
+    await redis.set(`paste:${id}`, pasteString, 'EX', data.ttl_seconds);
+  } else {
+    await redis.set(`paste:${id}`, pasteString);
   }
 
   return paste;
 }
 
-/**
- * Retrieve a paste by ID
- * Handles view counting and constraint checking
- */
 export async function getPaste(
   id: string,
   testNowMs?: number
 ): Promise<(Paste & { available: boolean }) | null> {
-  let data: string | null = null;
-  try {
-    data = await kv.get<string>(`paste:${id}`);
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('[db] Vercel KV get failed — reading from in-memory fallback for', id);
-      data = localStore.get(`paste:${id}`) ?? null;
-    } else {
-      throw err;
-    }
-  }
+  const data = await redis.get(`paste:${id}`);
 
   if (!data) {
     return null;
@@ -133,12 +86,12 @@ export async function getPaste(
   const paste: Paste = JSON.parse(data);
   const now = getCurrentTime(testNowMs);
 
-  // Check if expired
+  // Check Expiry
   if (paste.expires_at && now > paste.expires_at) {
     return { ...paste, available: false };
   }
 
-  // Check if view limit exceeded
+  // Check View Limit
   if (paste.max_views && paste.views_count >= paste.max_views) {
     return { ...paste, available: false };
   }
@@ -146,46 +99,30 @@ export async function getPaste(
   return { ...paste, available: true };
 }
 
-/**
- * Increment view count for a paste
- */
 export async function incrementViewCount(id: string): Promise<void> {
-  try {
-    const data = await kv.get<string>(`paste:${id}`);
-    if (!data) return;
-    const paste: Paste = JSON.parse(data);
-    paste.views_count += 1;
+  const data = await redis.get(`paste:${id}`);
+  if (!data) return;
 
-    // Recalculate TTL if it has one
-    if (paste.ttl_seconds && paste.created_at) {
-      const elapsed = Date.now() - paste.created_at;
-      const remaining = Math.max(1, paste.ttl_seconds - Math.floor(elapsed / 1000));
-      await kv.setex(`paste:${id}`, remaining, JSON.stringify(paste));
-    } else {
-      await kv.set(`paste:${id}`, JSON.stringify(paste));
-    }
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('[db] Vercel KV increment failed — updating in-memory fallback for', id);
-      const data = localStore.get(`paste:${id}`);
-      if (!data) return;
-      const paste: Paste = JSON.parse(data);
-      paste.views_count += 1;
-      localStore.set(`paste:${id}`, JSON.stringify(paste));
-    } else {
-      throw err;
-    }
+  const paste: Paste = JSON.parse(data);
+  paste.views_count += 1;
+
+  // We need to re-save to update the view count
+  // We must calculate remaining TTL so we don't reset the timer
+  const pasteString = JSON.stringify(paste);
+
+  if (paste.ttl_seconds && paste.created_at) {
+    const elapsed = Date.now() - paste.created_at;
+    const remaining = Math.max(1, paste.ttl_seconds - Math.floor(elapsed / 1000));
+    await redis.set(`paste:${id}`, pasteString, 'EX', remaining);
+  } else {
+    await redis.set(`paste:${id}`, pasteString);
   }
 }
 
-/**
- * Validate paste creation request
- */
 export function validatePasteRequest(body: any): {
   valid: boolean;
   error?: string;
 } {
-  // Check content
   if (!body.content || typeof body.content !== 'string') {
     return {
       valid: false,
@@ -200,9 +137,9 @@ export function validatePasteRequest(body: any): {
     };
   }
 
-  // Check ttl_seconds
   if (body.ttl_seconds !== undefined) {
-    if (!Number.isInteger(body.ttl_seconds) || body.ttl_seconds < 1) {
+    const ttl = Number(body.ttl_seconds);
+    if (!Number.isInteger(ttl) || ttl < 1) {
       return {
         valid: false,
         error: 'ttl_seconds must be an integer ≥ 1',
@@ -210,9 +147,9 @@ export function validatePasteRequest(body: any): {
     }
   }
 
-  // Check max_views
   if (body.max_views !== undefined) {
-    if (!Number.isInteger(body.max_views) || body.max_views < 1) {
+    const views = Number(body.max_views);
+    if (!Number.isInteger(views) || views < 1) {
       return {
         valid: false,
         error: 'max_views must be an integer ≥ 1',
